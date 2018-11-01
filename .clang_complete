@@ -1,3 +1,4 @@
+-Iinclude
 -isystemexternal/Catch2/single_include
 -isystemexternal/GSL/include
 -pedantic

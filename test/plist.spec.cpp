@@ -29,4 +29,78 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
+#include <plist/plist.hpp>
+
+#include <algorithm>
+#include <functional>
+#include <memory>
+#include <vector>
+
 #include <catch2/catch.hpp>
+
+struct Base {
+	virtual ~Base() = default;
+
+	virtual std::unique_ptr<Base> clone() const {
+		return std::make_unique<Base>();
+	}
+
+	virtual int foo() const noexcept {
+		return 0;
+	}
+};
+
+struct Derived : Base {
+	virtual ~Derived() = default;
+
+	std::unique_ptr<Base> clone() const override {
+		return std::make_unique<Derived>();
+	}
+
+	int foo() const noexcept override {
+		return 1;
+	}
+};
+
+TEST_CASE("PolymorphicList<int>") {
+	plist::PolymorphicList<int> list;
+
+	list.push_back(15);
+	REQUIRE(list.front() == 15);
+	REQUIRE(list.back() == 15);
+	REQUIRE(list.size() == 1);
+
+	list.emplace_back<int>(20);
+	REQUIRE(list.front() == 15);
+	REQUIRE(list.back() == 20);
+	REQUIRE(list.size() == 2);
+
+	list.clear();
+	REQUIRE(list.empty());
+}
+
+TEST_CASE("PolymorphicList<Derived>") {
+	plist::PolymorphicList<Base> list;
+
+	list.emplace_back<Derived>();
+	REQUIRE(list.front().foo() == 1);
+	REQUIRE(list.back().foo() == 1);
+	REQUIRE(list.size() == 1);
+
+	list.emplace_back<Base>();
+	REQUIRE(list.front().foo() == 1);
+	REQUIRE(list.back().foo() == 0);
+	REQUIRE(list.size() == 2);
+
+	std::vector<std::unique_ptr<Base>> vec;
+	vec.reserve(list.size());
+	std::transform(list.cbegin(), list.cend(), std::back_inserter(vec),
+				   std::mem_fn(&Base::clone));
+
+	REQUIRE(vec[0]->foo() == 1);
+	REQUIRE(vec[1]->foo() == 0);
+	REQUIRE(vec.size() == 2);
+
+	list.clear();
+	REQUIRE(list.empty());
+}

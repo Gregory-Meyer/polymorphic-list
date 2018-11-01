@@ -37,6 +37,7 @@
 #include <limits>
 #include <memory>
 #include <type_traits>
+#include <utility>
 
 #include <gsl/gsl>
 
@@ -58,6 +59,30 @@ public:
 
 	~PolymorphicList() {
 		clear();
+	}
+
+	reference front() {
+		assert(head_);
+
+		return head_->value();
+	}
+
+	const_reference front() const {
+		assert(head_);
+
+		return head_->value();
+	}
+
+	reference back() {
+		assert(tail_);
+
+		return tail_->value();
+	}
+
+	const_reference back() const {
+		assert(tail_);
+
+		return tail_->value();
 	}
 
 	iterator begin() noexcept {
@@ -117,13 +142,13 @@ public:
 	}
 
 	template <typename U,
-			  std::enable_if_t<std::is_base_of<T, U>::value, int> = 0>
+			  std::enable_if_t<std::is_same<T, U>::value || std::is_base_of<T, U>::value, int> = 0>
 	void push_back(const U &u) {
 		emplace_back<U>(u);
 	}
 
 	template <typename U,
-			  std::enable_if_t<std::is_base_of<T, U>::value, int> = 0>
+			  std::enable_if_t<std::is_same<T, U>::value || std::is_base_of<T, U>::value, int> = 0>
 	void push_back(U &&u) {
 		emplace_back<U>(std::move(u));
 	}
@@ -132,18 +157,43 @@ public:
 		typename U,
 		typename ...As,
 		std::enable_if_t<
-			std::is_base_of<T, U>::value
+			(std::is_same<T, U>::value || std::is_base_of<T, U>::value)
 			&& std::is_constructible<U, As&&...>::value,
 			int
 		> = 0
 	>
 	T& emplace_back(As &&...args) {
-		using DerivedAllocator =
-			typename NodeTraits::template rebind_alloc<detail::Node<U, T, NodeAllocator>>;
-		using DerivedTraits = std::allocator_traits<DerivedAllocator>;
+		const auto node =
+			allocate_and_construct_node<U>(std::forward<As>(args)...);
 
-		DerivedAllocator alloc{ alloc_ };
+		if (empty()) {
+			head_ = node;
+		} else if (tail_) {
+			tail_->next = node;
+		}
 
+		node->prev = tail_;
+		tail_ = node;
+		++size_;
+
+		return node->value();
+	}
+
+	void pop_back() {
+		assert(tail_);
+
+		const auto new_tail = tail_->prev;
+
+		if (new_tail) {
+			new_tail->next = nullptr;
+		} else {
+			head_ = nullptr;
+		}
+
+		tail_->deallocate(alloc_);
+		tail_ = new_tail;
+
+		--size_;
 	}
 
 private:
@@ -152,6 +202,37 @@ private:
 		typename std::allocator_traits<A>::template rebind_alloc<Node>;
 	using NodeTraits = std::allocator_traits<NodeAllocator>;
 	using NodePointer = typename NodeTraits::pointer;
+
+	template <
+		typename U,
+		typename ...As,
+		std::enable_if_t<
+			(std::is_same<T, U>::value || std::is_base_of<T, U>::value)
+			&& std::is_constructible<U, As&&...>::value,
+			int
+		> = 0
+	>
+	gsl::owner<NodePointer> allocate_and_construct_node(As &&...args) {
+		using DerivedNode = detail::Node<U, T, A>;
+		using DerivedAllocator =
+			typename NodeTraits::template rebind_alloc<DerivedNode>;
+		using DerivedTraits = std::allocator_traits<DerivedAllocator>;
+
+		DerivedAllocator alloc{ alloc_ };
+		const auto allocated =
+			DerivedTraits::allocate(alloc, 1);
+
+		try {
+			DerivedTraits::construct(alloc, allocated,
+									 std::forward<As>(args)...);
+		} catch (...) {
+			DerivedTraits::deallocate(alloc, allocated, 1);
+
+			throw;
+		}
+
+		return allocated;
+	}
 
 	gsl::owner<NodePointer> head_ = nullptr;
 	gsl::owner<NodePointer> tail_ = nullptr;

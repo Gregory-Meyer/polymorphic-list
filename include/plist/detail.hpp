@@ -57,14 +57,13 @@ using Identity = typename IdentityType<T>::type;
 template <typename T, typename A>
 struct NodeBase {
 protected:
-	using Traits = std::allocator_traits<A>;
+	using RawTraits = std::allocator_traits<A>;
+	using NodeAllocator = typename RawTraits::template rebind_alloc<NodeBase>;
+	using NodeTraits = std::allocator_traits<NodeAllocator>;
 
 public:
-	using Pointer = typename Traits::pointer;
-	using Difference = typename Traits::difference_type;
-
-	NodeBase(Pointer prev, Pointer next) noexcept
-	: prev{ prev }, next{ next } { }
+	using Pointer = typename NodeTraits::pointer;
+	using Difference = typename NodeTraits::difference_type;
 
 	virtual ~NodeBase() = default;
 
@@ -76,16 +75,23 @@ public:
 
 	virtual const T&& value() const && noexcept = 0;
 
-	virtual void deallocate(A &alloc);
+	virtual void deallocate(NodeAllocator &alloc) = 0;
 
-	Pointer prev;
-	Pointer next;
+	Pointer prev = nullptr;
+	Pointer next = nullptr;
 };
 
 template <typename U, typename T, typename A,
-		  std::enable_if_t<std::is_base_of<T, U>::value, int> = 0>
-class Node : public NodeBase<T, A> {
-public:
+		  std::enable_if_t<std::is_same<T, U>::value || std::is_base_of<T, U>::value, int> = 0>
+struct Node : public NodeBase<T, A> {
+	template <
+		typename ...Ts,
+		std::enable_if_t<std::is_constructible<U, Ts&&...>::value, int> = 0
+	>
+	explicit Node(Ts &&...ts)
+	noexcept(std::is_nothrow_constructible<U, Ts&&...>::value)
+	: value_(std::forward<Ts>(ts)...) { }
+
 	virtual ~Node() = default;
 
 	T& value() & noexcept override {
@@ -104,13 +110,16 @@ public:
 		return std::move(value_);
 	}
 
-	void deallocate(A &alloc) override {
+	void deallocate(typename NodeBase<T, A>::NodeAllocator &alloc) override {
 		using RawTraits = std::allocator_traits<A>;
 		using Allocator = typename RawTraits::template rebind_alloc<Node>;
 		using Traits = std::allocator_traits<Allocator>;
 
+		const auto as_pointer = static_cast<typename Traits::pointer>(this);
+
 		Allocator rebound{ alloc };
-		Traits::deallocate(rebound, this, 1);
+		Traits::destroy(rebound, as_pointer);
+		Traits::deallocate(rebound, as_pointer, 1);
 	}
 
 private:
@@ -141,12 +150,6 @@ public:
 
 	Iterator() noexcept = default;
 
-	template <std::enable_if_t<
-		std::is_same<
-			Identity<Iterator<T, A, IsConst>>,
-			Iterator<T, A, false>
-		>::value, int> = 0
-	>
 	Iterator(Iterator<T, A, false> other) noexcept
 	: current_{ other.current_ }, is_past_end_{ other.is_past_end_ } { }
 
@@ -207,7 +210,8 @@ public:
 	}
 
 	friend bool operator==(Iterator lhs, Iterator rhs) noexcept {
-		return lhs.current_ == rhs.current_;
+		return lhs.current_ == rhs.current_
+			   && lhs.is_past_end_ == rhs.is_past_end_;
 	}
 
 	friend bool operator!=(Iterator lhs, Iterator rhs) noexcept {
