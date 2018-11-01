@@ -1,0 +1,8 @@
+[submodule "external/Catch2"]
+	path = external/Catch2
+	url = https://github.com/catchorg/Catch2.git
+	branch = master
+[submodule "external/GSL"]
+	path = external/GSL
+	url = https://github.com/Microsoft/GSL.git
+	branch = master
