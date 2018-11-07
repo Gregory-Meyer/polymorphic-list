@@ -43,7 +43,6 @@
 
 namespace plist {
 
-// A defaults to std::allocator
 template <typename T, typename A>
 class PolymorphicList {
 public:
@@ -54,8 +53,10 @@ public:
 	using reference = T&;
 	using size_type = typename std::allocator_traits<A>::size_type;
 	using value_type = T;
-	using iterator = detail::Iterator<T, A, false>;
-	using const_iterator = detail::Iterator<T, A, true>;
+	using iterator = detail::Iterator<T, false>;
+	using const_iterator = detail::Iterator<T, true>;
+	using reverse_iterator = std::reverse_iterator<iterator>;
+	using const_reverse_iterator = std::reverse_iterator<const_iterator>;
 
 	~PolymorphicList() {
 		clear();
@@ -90,11 +91,15 @@ public:
 			return end();
 		}
 
-		return iterator{ head_, false };
+		return { std::addressof(*head_), false };
 	}
 
 	iterator end() noexcept {
-		return iterator{ tail_, true };
+		if (empty()) {
+			return { };
+		}
+
+		return { std::addressof(*tail_), true };
 	}
 
 	const_iterator begin() const noexcept {
@@ -110,11 +115,39 @@ public:
 			return cend();
 		}
 
-		return const_iterator{ head_, false };
+		return const_iterator{ std::addressof(*head_), false };
 	}
 
 	const_iterator cend() const noexcept {
-		return const_iterator{ tail_, true };
+		if (empty()) {
+			return { };
+		}
+
+		return { std::addressof(*tail_), true };
+	}
+
+	reverse_iterator rbegin() noexcept {
+		return reverse_iterator{ end() };
+	}
+
+	const_reverse_iterator rbegin() const noexcept {
+		return crbegin();
+	}
+
+	const_reverse_iterator crbegin() const noexcept {
+		return const_reverse_iterator{ end() };
+	}
+
+	reverse_iterator rend() noexcept {
+		return reverse_iterator{ begin() };
+	}
+
+	const_reverse_iterator rend() const noexcept {
+		return crend();
+	}
+
+	const_reverse_iterator crend() const noexcept {
+		return const_reverse_iterator{ begin() };
 	}
 
 	bool empty() const noexcept {
@@ -132,8 +165,9 @@ public:
 	void clear() noexcept {
 		for (auto current = head_; current != nullptr;) {
 			const auto next = current->next;
-			current->deallocate(alloc_);
-			current = next;
+			const auto deleter = current->get_deleter();
+			deleter(alloc_, current);
+			current = static_cast<NodePointer>(next);
 		}
 
 		head_ = nullptr;
@@ -163,41 +197,92 @@ public:
 		> = 0
 	>
 	T& emplace_back(As &&...args) {
-		const auto node =
-			allocate_and_construct_node<U>(std::forward<As>(args)...);
-
-		if (empty()) {
-			head_ = node;
-		} else if (tail_) {
-			tail_->next = node;
-		}
-
-		node->prev = tail_;
-		tail_ = node;
-		++size_;
-
-		return node->value();
+		return *emplace<U>(cend(), std::forward<As>(args)...);
 	}
 
 	void pop_back() {
-		assert(tail_);
+		erase(std::prev(cend()));
+	}
 
-		const auto new_tail = tail_->prev;
+	template <typename U,
+			  std::enable_if_t<std::is_same<T, U>::value || std::is_base_of<T, U>::value, int> = 0>
+	void push_front(const U &u) {
+		emplace_front<U>(u);
+	}
 
-		if (new_tail) {
-			new_tail->next = nullptr;
-		} else {
-			head_ = nullptr;
+	template <typename U,
+			  std::enable_if_t<std::is_same<T, U>::value || std::is_base_of<T, U>::value, int> = 0>
+	void push_front(U &&u) {
+		emplace_front<U>(std::move(u));
+	}
+
+	template <
+		typename U,
+		typename ...As,
+		std::enable_if_t<
+			(std::is_same<T, U>::value || std::is_base_of<T, U>::value)
+			&& std::is_constructible<U, As&&...>::value,
+			int
+		> = 0
+	>
+	T& emplace_front(As &&...args) {
+		return *emplace<U>(cbegin(), std::forward<As>(args)...);
+	}
+
+	void pop_front() {
+		erase(cbegin());
+	}
+
+	template <
+		typename U,
+		typename ...As,
+		std::enable_if_t<
+			(std::is_same<T, U>::value || std::is_base_of<T, U>::value)
+			&& std::is_constructible<U, As&&...>::value,
+			int
+		> = 0
+	>
+	iterator emplace(const_iterator pos, As &&...args) {
+		const auto node =
+			allocate_and_construct_node<U>(std::forward<As>(args)...);
+
+		const auto pos_node = [pos]() {
+			if (pos.is_past_end_) {
+				return NodePointer{ };
+			}
+
+			return static_cast<NodePointer>(pos.current_);
+		}();
+		const auto inserted_ptr = do_insert(pos_node, node);
+
+		return iterator{ inserted_ptr };
+	}
+
+	template <
+		typename U,
+		typename ...As,
+		std::enable_if_t<
+			(std::is_same<T, U>::value || std::is_base_of<T, U>::value)
+			&& std::is_constructible<U, As&&...>::value,
+			int
+		> = 0
+	>
+	iterator erase(const_iterator pos) {
+		assert(!pos.is_past_end_);
+
+		const auto pos_node =
+			static_cast<gsl::owner<NodePointer>>(pos.current_);
+		const auto after_node = do_erase(pos_node);
+
+		if (!after_node) {
+			return end();
 		}
 
-		tail_->deallocate(alloc_);
-		tail_ = new_tail;
-
-		--size_;
+		return iterator{ after_node };
 	}
 
 private:
-	using Node = detail::NodeBase<T, A>;
+	using Node = detail::NodeBaseWithAllocator<T, A>;
 	using NodeAllocator =
 		typename std::allocator_traits<A>::template rebind_alloc<Node>;
 	using NodeTraits = std::allocator_traits<NodeAllocator>;
@@ -234,9 +319,84 @@ private:
 		return allocated;
 	}
 
+	Node* do_insert(NodePointer pos, gsl::owner<NodePointer> node) noexcept {
+		assert(node);
+		assert(!node->next);
+		assert(!node->prev);
+
+		const auto pos_ptr = [pos]() -> Node* {
+			if (!pos) {
+				return nullptr;
+			}
+
+			return std::addressof(*pos);
+		}();
+
+		const gsl::owner<Node*> node_ptr = std::addressof(*node);
+
+		if (pos) {
+			node->prev = pos->prev;
+			node->next = pos_ptr;
+
+			if (pos->prev) {
+				pos->prev->next = node_ptr;
+			}
+
+			pos->prev = node_ptr;
+		} else {
+			if (tail_) {
+				tail_->next = node;
+				node->prev = std::addressof(*tail_);
+			}
+
+			tail_ = node;
+
+			if (!head_) {
+				head_ = node;
+			}
+		}
+
+		if (pos == head_) {
+			head_ = node;
+		}
+
+		++size_;
+
+		return node_ptr;
+	}
+
+	Node* do_erase(gsl::owner<NodePointer> node) noexcept {
+		assert(node);
+
+		--size_;
+
+		const auto after = static_cast<Node*>(node->next);
+
+		if (node->prev) {
+			node->prev->next = node->next;
+		}
+
+		if (node->next) {
+			node->next->prev = node->prev;
+		}
+
+		if (node == head_) {
+			head_ = head_->next;
+		}
+
+		if (node == tail_) {
+			tail_ = tail_->prev;
+		}
+
+		const auto deleter = node->get_deleter();
+		deleter(alloc_, node);
+
+		return after;
+	}
+
 	gsl::owner<NodePointer> head_ = nullptr;
 	gsl::owner<NodePointer> tail_ = nullptr;
-	NodeAllocator alloc_;
+	allocator_type alloc_;
 	size_type size_ = 0;
 };
 

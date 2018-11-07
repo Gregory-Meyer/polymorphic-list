@@ -33,6 +33,7 @@
 
 #include <algorithm>
 #include <functional>
+#include <iterator>
 #include <memory>
 #include <vector>
 
@@ -64,6 +65,8 @@ struct Derived : Base {
 
 TEST_CASE("PolymorphicList<int>") {
 	plist::PolymorphicList<int> list;
+	REQUIRE(list.empty());
+	REQUIRE(list.size() == 0);
 
 	list.push_back(15);
 	REQUIRE(list.front() == 15);
@@ -75,11 +78,21 @@ TEST_CASE("PolymorphicList<int>") {
 	REQUIRE(list.back() == 20);
 	REQUIRE(list.size() == 2);
 
+	list.push_back(25);
+	REQUIRE(list.front() == 15);
+	REQUIRE(list.back() == 25);
+	REQUIRE(list.size() == 3);
+
+	REQUIRE(std::vector<int>{ list.cbegin(), list.cend() }
+			== std::vector<int>{ 15, 20, 25 });
+	REQUIRE(std::vector<int>{ list.crbegin(), list.crend() }
+			== std::vector<int>{ 25, 20, 15 });
+
 	list.clear();
 	REQUIRE(list.empty());
 }
 
-TEST_CASE("PolymorphicList<Derived>") {
+TEST_CASE("PolymorphicList<Base>") {
 	plist::PolymorphicList<Base> list;
 
 	list.emplace_back<Derived>();
@@ -97,9 +110,9 @@ TEST_CASE("PolymorphicList<Derived>") {
 	std::transform(list.cbegin(), list.cend(), std::back_inserter(vec),
 				   std::mem_fn(&Base::clone));
 
+	REQUIRE(vec.size() == 2);
 	REQUIRE(vec[0]->foo() == 1);
 	REQUIRE(vec[1]->foo() == 0);
-	REQUIRE(vec.size() == 2);
 
 	list.clear();
 	REQUIRE(list.empty());
