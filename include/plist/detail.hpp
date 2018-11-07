@@ -206,10 +206,11 @@ struct DummyNode : NodeBaseWithAllocator<T, A> {
 template <typename T, bool IsConst>
 class Iterator {
 public:
-	template <typename U, typename A>
+	template <typename, typename>
 	friend class plist::PolymorphicList;
 
-	friend Iterator<T, true>;
+	template <typename, bool>
+	friend class Iterator;
 
 	using difference_type = std::ptrdiff_t;
 	using iterator_category = std::bidirectional_iterator_tag;
@@ -219,7 +220,8 @@ public:
 
 	Iterator() noexcept = default;
 
-	Iterator(Iterator<T, false> other) noexcept
+	template <bool B = IsConst, std::enable_if_t<B, int> = 0>
+	Iterator(Iterator<T, !B> other) noexcept
 	: current_{ other.current_ } { }
 
 	Iterator& operator++() {
