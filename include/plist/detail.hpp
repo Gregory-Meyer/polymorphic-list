@@ -48,36 +48,122 @@ namespace detail {
 
 template <typename T>
 struct NodeBase {
+	NodeBase(const NodeBase &other) = delete;
+
+	NodeBase(NodeBase &&other) = delete;
+
+	NodeBase& operator=(const NodeBase &other) = delete;
+
+	NodeBase& operator=(NodeBase &&other) = delete;
+
 	virtual ~NodeBase() = default;
 
-	virtual T& value() & noexcept = 0;
+	T& value() & noexcept {
+		assert(value_ptr_);
 
-	virtual const T& value() const & noexcept = 0;
+		return *value_ptr_;
+	}
 
-	virtual T&& value() && noexcept = 0;
+	const T& value() const & noexcept {
+		assert(value_ptr_);
+assert(value_ptr_);
+		return *value_ptr_;
+	}
 
-	virtual const T&& value() const && noexcept = 0;
+	T&& value() && noexcept {
+		assert(value_ptr_);
+
+		return std::move(*value_ptr_);
+	}
+
+	const T&& value() const && noexcept {
+		assert(value_ptr_);
+
+		return std::move(*value_ptr_);
+	}
 
 	NodeBase *prev = nullptr;
 	NodeBase *next = nullptr;
+
+protected:
+	NodeBase(T *value_ptr) noexcept : value_ptr_{ value_ptr } { }
+
+private:
+	T *value_ptr_;
 };
 
 template <typename T, typename A = std::allocator<T>>
 struct NodeBaseWithAllocator : NodeBase<T> {
 private:
 	using Traits = std::allocator_traits<A>;
+
 	using NodeAllocator =
 		typename Traits::template rebind_alloc<NodeBaseWithAllocator>;
 	using NodeTraits = typename std::allocator_traits<NodeAllocator>;
-	using Pointer = typename NodeTraits::pointer;
+	using NodePointer = typename NodeTraits::pointer;
 
 public:
-	using Deleter = void (*)(A&, Pointer);
+	using Deleter = void (*)(A&, NodePointer);
+
+	NodeBaseWithAllocator(const NodeBaseWithAllocator &other) = delete;
+
+	NodeBaseWithAllocator(NodeBaseWithAllocator &&other) = delete;
+
+	NodeBaseWithAllocator& operator=(
+		const NodeBaseWithAllocator &other
+	) = delete;
+
+	NodeBaseWithAllocator& operator=(NodeBaseWithAllocator &&other) = delete;
 
 	virtual ~NodeBaseWithAllocator() = default;
 
-	virtual Deleter get_deleter() = 0;
+	Deleter get_deleter() const noexcept {
+		assert(deleter_);
+
+		return deleter_;
+	}
+
+protected:
+	NodeBaseWithAllocator(T *value_ptr, Deleter deleter) noexcept
+	: NodeBase<T>{ value_ptr }, deleter_{ deleter } {
+		assert(deleter);
+	}
+
+	Deleter deleter_;
 };
+
+template <typename A, typename T>
+struct ReboundAllocType {
+	using type = typename std::allocator_traits<A>::template rebind_alloc<T>;
+};
+
+template <typename A, typename T>
+using ReboundAlloc = typename ReboundAllocType<A, T>::type;
+
+template <typename A, typename T>
+struct ReboundTraitsType {
+	using type = typename std::allocator_traits<A>::template rebind_traits<T>;
+};
+
+template <typename A, typename T>
+using ReboundTraits = typename ReboundTraitsType<A, T>::type;
+
+template <typename A, typename T>
+struct ReboundPointerType {
+	using type = typename ReboundTraits<A, T>::pointer;
+};
+
+template <typename A, typename T>
+using ReboundPointer = typename ReboundPointerType<A, T>::type;
+
+template <typename A, typename B, typename D>
+void deleter(A &alloc, ReboundPointer<A, B> base_ptr) {
+	const auto derived_ptr = static_cast<ReboundPointer<A, D>>(base_ptr);
+
+	ReboundAlloc<A, D> derived_alloc{ alloc };
+	ReboundTraits<A, D>::destroy(derived_alloc, derived_ptr);
+	ReboundTraits<A, D>::deallocate(derived_alloc, derived_ptr, 1);
+}
 
 template <typename U, typename T, typename A = std::allocator<T>,
 		  std::enable_if_t<std::is_same<T, U>::value || std::is_base_of<T, U>::value, int> = 0>
@@ -87,53 +173,34 @@ struct Node : NodeBaseWithAllocator<T, A> {
 		std::enable_if_t<std::is_constructible<U, Ts&&...>::value, int> = 0
 	>
 	explicit Node(Ts &&...ts)
-	noexcept(std::is_nothrow_constructible<U, Ts&&...>::value)
-	: value_(std::forward<Ts>(ts)...) { }
+	noexcept(std::is_nothrow_constructible<U, Ts&&...>::value) :
+		NodeBaseWithAllocator<T, A>{
+			std::addressof(value_),
+			&deleter<A, NodeBaseWithAllocator<T, A>, Node>
+		},
+		value_(std::forward<Ts>(ts)...)
+	{ }
+
+	Node(const Node &other) = delete;
+
+	Node(Node &&other) = delete;
+
+	Node& operator=(const Node &other) = delete;
+
+	Node& operator=(Node &&other) = delete;
 
 	virtual ~Node() = default;
 
-	T& value() & noexcept override {
-		return value_;
-	}
-
-	const T& value() const & noexcept override {
-		return value_;
-	}
-
-	T&& value() && noexcept override {
-		return std::move(value_);
-	}
-
-	const T&& value() const && noexcept override {
-		return std::move(value_);
-	}
-
-	typename NodeBaseWithAllocator<T, A>::Deleter get_deleter() override {
-		return &Node::deleter;
-	}
-
 private:
-	using Traits = std::allocator_traits<A>;
-	using BaseAllocator =
-		typename Traits::template rebind_alloc<NodeBaseWithAllocator<T, A>>;
-	using BaseTraits = typename std::allocator_traits<BaseAllocator>;
-	using BasePointer = typename BaseTraits::pointer;
-
-	using NodeAllocator = typename Traits::template rebind_alloc<Node>;
-	using NodeTraits = typename std::allocator_traits<NodeAllocator>;
-	using NodePointer = typename NodeTraits::pointer;
-
-	static void deleter(A &alloc, BasePointer base_ptr) {
-		assert(base_ptr);
-
-		const auto node_ptr = static_cast<NodePointer>(base_ptr);
-
-		NodeAllocator node_alloc{ alloc };
-		NodeTraits::destroy(node_alloc, node_ptr);
-		NodeTraits::deallocate(node_alloc, node_ptr, 1);
-	}
-
 	U value_;
+};
+
+template <typename T, typename A = std::allocator<T>>
+struct DummyNode : NodeBaseWithAllocator<T, A> {
+	constexpr DummyNode() noexcept : NodeBaseWithAllocator<T, A>{
+		nullptr,
+		&deleter<A, NodeBaseWithAllocator<T, A>, DummyNode>
+	} { }
 };
 
 template <typename T, bool IsConst>
@@ -141,6 +208,8 @@ class Iterator {
 public:
 	template <typename U, typename A>
 	friend class plist::PolymorphicList;
+
+	friend Iterator<T, true>;
 
 	using difference_type = std::ptrdiff_t;
 	using iterator_category = std::bidirectional_iterator_tag;
@@ -151,17 +220,13 @@ public:
 	Iterator() noexcept = default;
 
 	Iterator(Iterator<T, false> other) noexcept
-	: current_{ other.current_ }, is_past_end_{ other.is_past_end_ } { }
+	: current_{ other.current_ } { }
 
 	Iterator& operator++() {
 		assert(current_);
-		assert(!is_past_end_);
+		assert(current_->next);
 
-		if (!current_->next) {
-			is_past_end_ = true;
-		} else {
-			current_ = current_->next;
-		}
+		current_ = current_->next;
 
 		return *this;
 	}
@@ -176,13 +241,9 @@ public:
 
 	Iterator& operator--() {
 		assert(current_);
-		assert(is_past_end_ || current_->prev);
+		assert(current_->prev);
 
-		if (is_past_end_) {
-			is_past_end_ = false;
-		} else {
-			current_ = current_->prev;
-		}
+		current_ = current_->prev;
 
 		return *this;
 	}
@@ -197,25 +258,17 @@ public:
 
 	reference operator*() const {
 		assert(current_);
-		assert(!is_past_end_);
 
 		return current_->value();
 	}
 
 	pointer operator->() const {
 		assert(current_);
-		assert(!is_past_end_);
 
 		return std::addressof(**this);
 	}
 
 	friend bool operator==(Iterator lhs, Iterator rhs) noexcept {
-		if (lhs.is_past_end_ != rhs.is_past_end_) {
-			return false;
-		} else if (lhs.is_past_end_ && rhs.is_past_end_) {
-			return true;
-		}
-
 		return lhs.current_ == rhs.current_;
 	}
 
@@ -224,14 +277,9 @@ public:
 	}
 
 private:
-	explicit Iterator(NodeBase<T> *current) noexcept
-	: Iterator{ current, false } { }
-
-	Iterator(NodeBase<T> *current, bool is_past_end) noexcept
-	: current_{ current }, is_past_end_{ is_past_end } { }
+	explicit Iterator(NodeBase<T> *current) noexcept : current_{ current } { }
 
 	NodeBase<T> *current_ = nullptr;
-	bool is_past_end_ = true;
 };
 
 } // namespace detail
