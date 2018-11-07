@@ -66,7 +66,7 @@ struct NodeBase {
 
 	const T& value() const & noexcept {
 		assert(value_ptr_);
-assert(value_ptr_);
+
 		return *value_ptr_;
 	}
 
