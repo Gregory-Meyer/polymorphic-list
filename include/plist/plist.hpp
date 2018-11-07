@@ -230,16 +230,17 @@ public:
 		> = 0
 	>
 	iterator emplace(const_iterator pos, As &&...args) {
+		using PtrTraits = std::pointer_traits<NodePointer>;
+
 		assert(pos.current_);
 
 		const auto node =
 			allocate_and_construct_node<U>(std::forward<As>(args)...);
 
 		const auto pos_node =
-			std::pointer_traits<NodePointer>::pointer_to(static_cast<Node&>(*pos.current_));
-		const auto inserted_ptr = do_insert(pos_node, node);
+			PtrTraits::pointer_to(static_cast<Node&>(*pos.current_));
 
-		return iterator{ inserted_ptr };
+		return iterator{ to_raw_pointer(do_insert(pos_node, node)) };
 	}
 
 	template <
@@ -316,59 +317,97 @@ private:
 		return allocated;
 	}
 
-	Node* do_insert(NodePointer pos, gsl::owner<NodePointer> node) noexcept {
+	NodePointer do_insert(NodePointer pos, gsl::owner<NodePointer> node) noexcept {
 		assert(pos);
 		assert(node);
 		assert(!node->next);
 		assert(!node->prev);
 
-		const auto pos_ptr = std::addressof(*pos);
-		const gsl::owner<Node*> node_ptr = std::addressof(*node);
-
-		node->next = pos_ptr;
+		node->next = to_raw_pointer(pos);
 		node->prev = pos->prev;
-		pos->prev = node_ptr;
 
-		if (pos == dummy_) {
-			tail_ = node;
+		if (pos->prev) {
+			pos->prev->next = to_raw_pointer(node);
 		}
 
-		if (pos == head_ || !head_) {
+		pos->prev = to_raw_pointer(node);
+
+		if (pos == dummy_ || tail_ == dummy_) {
+			tail_ = node;
+			dummy_->prev = tail_;
+			tail_->next = dummy_;
+		}
+
+		if (pos == head_ || head_ == dummy_) {
 			head_ = node;
 		}
 
 		++size_;
 
-		return node_ptr;
+		return node;
 	}
 
 	Node* do_erase(gsl::owner<NodePointer> node) noexcept {
+		assert(node);
 		assert(node != dummy_);
 
 		--size_;
 
 		const auto after = static_cast<Node*>(node->next);
 
-		if (node->prev) {
+		if (!node->prev) {
+			assert(node == head_);
+			head_ = to_alloc_pointer(head_->next);
+
+			if (head_) {
+				head_->prev = nullptr;
+			}
+		} else {
+			assert(node != head_);
+
 			node->prev->next = node->next;
 		}
 
-		if (node->next) {
+		if (node->next == to_raw_pointer(dummy_)) {
+			assert(node == tail_);
+
+			dummy_->prev = tail_->prev;
+
+			if (tail_->prev) {
+				tail_->prev->next = dummy_;
+				tail_ = to_alloc_pointer(tail_->prev);
+			} else {
+				tail_ = dummy_;
+			}
+		} else {
+			assert(node != tail_);
+
 			node->next->prev = node->prev;
 		}
 
-		if (node == head_) {
-			head_ = head_->next;
-		}
-
-		if (node == tail_) {
-			tail_ = tail_->prev;
-		}
+		node->next = nullptr;
+		node->prev = nullptr;
 
 		const auto deleter = node->get_deleter();
 		deleter(alloc_, node);
 
 		return after;
+	}
+
+	static NodePointer to_alloc_pointer(Node *node) {
+		if (!node) {
+			return NodePointer{ };
+		}
+
+		return std::pointer_traits<NodePointer>::to_pointer(*node);
+	}
+
+	static Node* to_raw_pointer(NodePointer node) {
+		if (!node) {
+			return nullptr;
+		}
+
+		return std::addressof(*node);
 	}
 
 	allocator_type alloc_;
