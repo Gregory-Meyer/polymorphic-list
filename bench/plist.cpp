@@ -141,6 +141,14 @@ static int get_front(const Plist &list) noexcept {
 	return list.front().get();
 }
 
+static int get(List::const_reference elem) noexcept {
+	return elem->get();
+}
+
+static int get(Plist::const_reference elem) noexcept {
+	return elem.get();
+}
+
 template <typename T>
 T make_random_list(std::mt19937 &gen, typename T::size_type n) {
 	using Size = typename T::size_type;
@@ -240,3 +248,29 @@ static void bm_iterate(benchmark::State &state) {
 }
 BENCHMARK_TEMPLATE(bm_iterate, List)->Range(1, 1 << 16);
 BENCHMARK_TEMPLATE(bm_iterate, Plist)->Range(1, 1 << 16);
+
+template <typename T>
+static void bm_read_iterate(benchmark::State &state) {
+	using Size = typename T::size_type;
+
+	const auto gen_ptr = std::make_unique<std::mt19937>();
+	const auto values_list =
+			make_random_list<T>(*gen_ptr, static_cast<Size>(state.range(0)));
+
+	for (auto _ : state) {
+		std::vector<int> v;
+		v.reserve(values_list.size());
+
+		const auto start = std::chrono::steady_clock::now();
+
+		for (const auto &elem : values_list) {
+			v.push_back(get(elem));
+		}
+
+		const auto end = std::chrono::steady_clock::now();
+		const std::chrono::duration<double> elapsed = end - start;
+		state.SetIterationTime(elapsed.count());
+	}
+}
+BENCHMARK_TEMPLATE(bm_read_iterate, List)->Range(1, 1 << 16)->UseManualTime();
+BENCHMARK_TEMPLATE(bm_read_iterate, Plist)->Range(1, 1 << 16)->UseManualTime();
