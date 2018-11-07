@@ -60,9 +60,6 @@ public:
 
 	~PolymorphicList() {
 		clear();
-
-		const auto deleter = dummy_->get_deleter();
-		deleter(alloc_, dummy_);
 	}
 
 	reference front() {
@@ -94,7 +91,7 @@ public:
 	}
 
 	iterator end() noexcept {
-		return iterator{ std::addressof(*dummy_) };
+		return iterator{ dummy_raw_ptr() };
 	}
 
 	const_iterator begin() const noexcept {
@@ -110,7 +107,7 @@ public:
 	}
 
 	const_iterator cend() const noexcept {
-		return iterator{ std::addressof(*dummy_) };
+		return iterator{ dummy_raw_ptr() };
 	}
 
 	reverse_iterator rbegin() noexcept {
@@ -150,8 +147,12 @@ public:
 	}
 
 	void clear() noexcept {
-		for (auto current = head_; current != nullptr && current != dummy_;) {
-			const auto next = current->next;
+		for (auto current = head_;
+			 current != nullptr && current != dummy_alloc_ptr();)
+		{
+			const auto next = to_alloc_pointer(
+				static_cast<Node*>(current->next)
+			);
 			const auto deleter = current->get_deleter();
 			deleter(alloc_, current);
 			current = static_cast<NodePointer>(next);
@@ -253,7 +254,7 @@ public:
 		> = 0
 	>
 	iterator erase(const_iterator pos) {
-		assert(pos.current_ != dummy_);
+		assert(pos.current_ != dummy_raw_ptr());
 
 		const auto pos_node =
 			static_cast<gsl::owner<NodePointer>>(pos.current_);
@@ -332,13 +333,13 @@ private:
 
 		pos->prev = to_raw_pointer(node);
 
-		if (pos == dummy_ || tail_ == dummy_) {
+		if (pos == dummy_alloc_ptr() || tail_ == dummy_alloc_ptr()) {
 			tail_ = node;
-			dummy_->prev = tail_;
-			tail_->next = dummy_;
+			dummy_.prev = tail_;
+			tail_->next = dummy_raw_ptr();
 		}
 
-		if (pos == head_ || head_ == dummy_) {
+		if (pos == head_ || head_ == dummy_alloc_ptr()) {
 			head_ = node;
 		}
 
@@ -349,7 +350,7 @@ private:
 
 	Node* do_erase(gsl::owner<NodePointer> node) noexcept {
 		assert(node);
-		assert(node != dummy_);
+		assert(node != dummy_alloc_ptr());
 
 		--size_;
 
@@ -368,16 +369,16 @@ private:
 			node->prev->next = node->next;
 		}
 
-		if (node->next == to_raw_pointer(dummy_)) {
+		if (node->next == dummy_raw_ptr()) {
 			assert(node == tail_);
 
-			dummy_->prev = tail_->prev;
+			dummy_.prev = tail_->prev;
 
 			if (tail_->prev) {
-				tail_->prev->next = dummy_;
+				tail_->prev->next = dummy_raw_ptr();
 				tail_ = to_alloc_pointer(tail_->prev);
 			} else {
-				tail_ = dummy_;
+				tail_ = dummy_alloc_ptr();
 			}
 		} else {
 			assert(node != tail_);
@@ -399,7 +400,7 @@ private:
 			return NodePointer{ };
 		}
 
-		return std::pointer_traits<NodePointer>::to_pointer(*node);
+		return std::pointer_traits<NodePointer>::pointer_to(*node);
 	}
 
 	static Node* to_raw_pointer(NodePointer node) {
@@ -410,10 +411,18 @@ private:
 		return std::addressof(*node);
 	}
 
+	Node* dummy_raw_ptr() const noexcept {
+		return std::addressof(dummy_);
+	}
+
+	NodePointer dummy_alloc_ptr() const noexcept {
+		return std::pointer_traits<NodePointer>::pointer_to(dummy_);
+	}
+
+	mutable detail::DummyNode<T, A> dummy_;
+	gsl::owner<NodePointer> head_ = dummy_alloc_ptr();
+	gsl::owner<NodePointer> tail_ = dummy_alloc_ptr();
 	allocator_type alloc_;
-	gsl::owner<NodePointer> dummy_ = allocate_dummy();
-	gsl::owner<NodePointer> head_ = dummy_;
-	gsl::owner<NodePointer> tail_ = dummy_;
 	size_type size_ = 0;
 };
 

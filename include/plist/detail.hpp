@@ -201,6 +201,18 @@ struct DummyNode : NodeBaseWithAllocator<T, A> {
 		nullptr,
 		&deleter<A, NodeBaseWithAllocator<T, A>, DummyNode>
 	} { }
+
+	constexpr DummyNode(const DummyNode&) noexcept : DummyNode{ } { }
+
+	constexpr DummyNode(DummyNode&&) noexcept : DummyNode{ } { }
+
+	constexpr DummyNode& operator=(const DummyNode&) noexcept {
+		return *this;
+	}
+
+	constexpr DummyNode& operator=(DummyNode&&) noexcept {
+		return *this;
+	}
 };
 
 template <typename T, bool IsConst>
