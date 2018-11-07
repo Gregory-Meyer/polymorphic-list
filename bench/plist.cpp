@@ -72,10 +72,28 @@ struct Two : Value {
 	}
 };
 
-using List = std::list<std::unique_ptr<Value>>;
+using Box = std::unique_ptr<Value>;
+using List = std::list<Box>;
+using Vec = std::vector<Box>;
 using Plist = plist::PolymorphicList<Value>;
 
 static void push_value(List &values, int value) {
+	switch (value) {
+	case 0:
+		values.push_back(std::make_unique<Zero>());
+		break;
+	case 1:
+		values.push_back(std::make_unique<One>());
+		break;
+	case 2:
+		values.push_back(std::make_unique<Two>());
+		break;
+	default:
+		__builtin_unreachable();
+	}
+}
+
+static void push_value(Vec &values, int value) {
 	switch (value) {
 	case 0:
 		values.push_back(std::make_unique<Zero>());
@@ -112,7 +130,18 @@ static int sum(const List &list) {
 		list.cbegin(),
 		list.cend(),
 		0,
-		[](int prev, List::const_reference value) {
+		[](int prev, const Box &value) {
+			return prev + value->get();
+		}
+	);
+}
+
+static int sum(const Vec &vec) {
+	return std::accumulate(
+		vec.cbegin(),
+		vec.cend(),
+		0,
+		[](int prev, const Box &value) {
 			return prev + value->get();
 		}
 	);
@@ -135,17 +164,23 @@ static int get_front(const List &list) noexcept {
 	return list.front()->get();
 }
 
+static int get_front(const Vec &vec) noexcept {
+	assert(!vec.empty());
+
+	return vec.front()->get();
+}
+
 static int get_front(const Plist &list) noexcept {
 	assert(!list.empty());
 
 	return list.front().get();
 }
 
-static int get(List::const_reference elem) noexcept {
+static int get(const Box &elem) noexcept {
 	return elem->get();
 }
 
-static int get(Plist::const_reference elem) noexcept {
+static int get(const Value &elem) noexcept {
 	return elem.get();
 }
 
@@ -178,6 +213,7 @@ static void bm_push(benchmark::State &state) {
 	}
 }
 BENCHMARK_TEMPLATE(bm_push, List)->UseManualTime();
+BENCHMARK_TEMPLATE(bm_push, Vec)->UseManualTime();
 BENCHMARK_TEMPLATE(bm_push, Plist)->UseManualTime();
 
 template <typename T>
@@ -194,6 +230,7 @@ static void bm_sum(benchmark::State &state) {
 	}
 }
 BENCHMARK_TEMPLATE(bm_sum, List)->Range(1, 1 << 16);
+BENCHMARK_TEMPLATE(bm_sum, Vec)->Range(1, 1 << 16);
 BENCHMARK_TEMPLATE(bm_sum, Plist)->Range(1, 1 << 16);
 
 template <typename T>
@@ -216,6 +253,7 @@ static void bm_clear(benchmark::State &state) {
 	}
 }
 BENCHMARK_TEMPLATE(bm_clear, List)->Range(1, 1 << 16)->UseManualTime();
+BENCHMARK_TEMPLATE(bm_clear, Vec)->Range(1, 1 << 16)->UseManualTime();
 BENCHMARK_TEMPLATE(bm_clear, Plist)->Range(1, 1 << 16)->UseManualTime();
 
 template <typename T>
@@ -230,6 +268,7 @@ static void bm_front(benchmark::State &state) {
 	}
 }
 BENCHMARK_TEMPLATE(bm_front, List);
+BENCHMARK_TEMPLATE(bm_front, Vec);
 BENCHMARK_TEMPLATE(bm_front, Plist);
 
 template <typename T>
@@ -247,6 +286,7 @@ static void bm_iterate(benchmark::State &state) {
 	}
 }
 BENCHMARK_TEMPLATE(bm_iterate, List)->Range(1, 1 << 16);
+BENCHMARK_TEMPLATE(bm_iterate, Vec)->Range(1, 1 << 16);
 BENCHMARK_TEMPLATE(bm_iterate, Plist)->Range(1, 1 << 16);
 
 template <typename T>
@@ -273,4 +313,5 @@ static void bm_read_iterate(benchmark::State &state) {
 	}
 }
 BENCHMARK_TEMPLATE(bm_read_iterate, List)->Range(1, 1 << 16)->UseManualTime();
+BENCHMARK_TEMPLATE(bm_read_iterate, Vec)->Range(1, 1 << 16)->UseManualTime();
 BENCHMARK_TEMPLATE(bm_read_iterate, Plist)->Range(1, 1 << 16)->UseManualTime();
