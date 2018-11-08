@@ -12,7 +12,7 @@ option(POLYMORPHIC_LIST_BUILD_TESTS "Build tests for polymorphic-list." ON)
 if(POLYMORPHIC_LIST_BUILD_TESTS)
 	include_directories(external/Catch2/single_include)
 
-	add_executable(test test/main.spec.cpp test/plist.spec.cpp)
+	add_executable(test_plist test/main.spec.cpp test/plist.spec.cpp)
 endif()
 
 option(POLYMORPHIC_LIST_BUILD_BENCHMARKS
@@ -23,6 +23,7 @@ if(POLYMORPHIC_LIST_BUILD_BENCHMARKS)
 
 	include_directories(${benchmark_INCLUDE_DIRS})
 
-	add_executable(bench bench/main.cpp bench/plist.cpp)
-	target_link_libraries(bench benchmark benchmark_main Threads::Threads)
+	add_executable(bench_plist bench/main.cpp bench/plist.cpp)
+	target_link_libraries(bench_plist benchmark benchmark_main
+						  Threads::Threads)
 endif()
