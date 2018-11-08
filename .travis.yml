@@ -80,5 +80,5 @@ script:
   - cd build
   - cmake .. -G Ninja -DCMAKE_BUILD_TYPE=$(CMAKE_BUILD_TYPE)
   - ninja -j$(nproc)
-  - ./test
+  - ./test_plist
   - cd ..
