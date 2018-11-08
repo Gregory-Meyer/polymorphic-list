@@ -1,0 +1,84 @@
+dist: trusty
+language: cpp
+matrix:
+  include:
+    - os: linux
+      addons:
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+          packages:
+            - g++-8
+            - ninja-build
+      env:
+         - MATRIX_EVAL="CXX=g++-8 CMAKE_BUILD_TYPE=Debug"
+    - os: linux
+      addons:
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+          packages:
+            - g++-8
+            - ninja-build
+      env:
+         - MATRIX_EVAL="CXX=g++-8 CMAKE_BUILD_TYPE=Release"
+    - os: linux
+      addons:
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+            - llvm-toolchain-trusty-7
+          packages:
+            - clang-7
+            - ninja-build
+      env:
+        - MATRIX_EVAL="CXX=clang++-7 CMAKE_BUILD_TYPE=Debug"
+    - os: linux
+      addons:
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+            - llvm-toolchain-trusty-7
+          packages:
+            - clang-7
+            - ninja-build
+      env:
+        - MATRIX_EVAL="CXX=clang++-7 CMAKE_BUILD_TYPE=Release"
+    - os: linux
+      addons:
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+            - llvm-toolchain-trusty-7
+          packages:
+            - clang-7
+            - ninja-build
+      env:
+        - MATRIX_EVAL="CXX=clang++-7 CMAKE_BUILD_TYPE=Release CXXFLAGS='${CXXFLAGS} -g -fsanitize=address -fsanitize-address-use-after-scope -fno-omit-frame-pointer -fno-inline -fno-optimize-sibling-calls'"
+    - os: linux
+      addons:
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+            - llvm-toolchain-trusty-7
+          packages:
+            - clang-7
+            - ninja-build
+      env:
+        - MATRIX_EVAL="CXX=clang++-7 CMAKE_BUILD_TYPE=Release CXXFLAGS='${CXXFLAGS} -g -fsanitize=undefined -fno-omit-frame-pointer -fno-inline -fno-optimize-sibling-calls'"
+env:
+  global:
+    - CXXFLAGS="-Wall -Wextra -pedantic -Wconversion -Wshadow -Wcast-qual"
+before_install:
+  - eval "${MATRIX_EVAL}"
+  - which $CC
+  - which $CXX
+  - $CC --version
+  - $CXX --version
+script:
+  - mkdir -p build
+  - cd build
+  - cmake .. -G Ninja -DCMAKE_BUILD_TYPE=$(CMAKE_BUILD_TYPE)
+  - ninja -j$(nproc)
+  - ./test
+  - cd ..
