@@ -29,9 +29,10 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
+#include "utils.hpp"
+
 #include <plist/plist.hpp>
 
-#include <algorithm>
 #include <functional>
 #include <iterator>
 #include <memory>
@@ -63,33 +64,69 @@ struct Derived : Base {
 	}
 };
 
-TEST_CASE("PolymorphicList<int>") {
-	plist::PolymorphicList<int> list;
-	REQUIRE(list.empty());
-	REQUIRE(list.size() == 0);
+SCENARIO("adding items to a PolymorphicList<int>") {
+	GIVEN("an empty PolymorphicList<int>") {
+		plist::PolymorphicList<int> list;
 
-	list.push_back(15);
-	REQUIRE(list.front() == 15);
-	REQUIRE(list.back() == 15);
-	REQUIRE(list.size() == 1);
+		THEN("it is empty") {
+			REQUIRE(list.empty());
+			REQUIRE(list.size() == 0);
+			REQUIRE(list.cbegin() == list.cend());
+			REQUIRE(list.crbegin() == list.crend());
+		}
 
-	list.emplace_back<int>(20);
-	REQUIRE(list.front() == 15);
-	REQUIRE(list.back() == 20);
-	REQUIRE(list.size() == 2);
+		WHEN("an element is pushed onto the back") {
+			list.push_back(5);
 
-	list.push_back(25);
-	REQUIRE(list.front() == 15);
-	REQUIRE(list.back() == 25);
-	REQUIRE(list.size() == 3);
+			THEN("it contains a single element") {
+				REQUIRE_FALSE(list.empty());
+				REQUIRE(list.size() == 1);
 
-	REQUIRE(std::vector<int>{ list.cbegin(), list.cend() }
-			== std::vector<int>{ 15, 20, 25 });
-	REQUIRE(std::vector<int>{ list.crbegin(), list.crend() }
-			== std::vector<int>{ 25, 20, 15 });
+				REQUIRE(make_range(list) == make_ilist(5));
+				REQUIRE(reverse(list) == make_ilist(5));
+			}
+		}
 
-	list.clear();
-	REQUIRE(list.empty());
+		WHEN("an element is pushed onto the front") {
+			list.push_front(5);
+
+			THEN("it contains a single element") {
+				REQUIRE_FALSE(list.empty());
+				REQUIRE(list.size() == 1);
+
+				REQUIRE(make_range(list) == make_ilist(5));
+				REQUIRE(reverse(list) == make_ilist(5));
+			}
+		}
+
+		WHEN("three elements are pushed onto the back") {
+			list.push_back(5);
+			list.push_back(10);
+			list.push_back(15);
+
+			THEN("it contains three elements") {
+				REQUIRE_FALSE(list.empty());
+				REQUIRE(list.size() == 3);
+
+				REQUIRE(make_range(list) == make_ilist(5, 10, 15));
+				REQUIRE(reverse(list) == make_ilist(15, 10, 5));
+			}
+		}
+
+		WHEN("three elements are pushed onto the front") {
+			list.push_front(5);
+			list.push_front(10);
+			list.push_front(15);
+
+			THEN("it contains three elements") {
+				REQUIRE_FALSE(list.empty());
+				REQUIRE(list.size() == 3);
+
+				REQUIRE(make_range(list) == make_ilist(15, 10, 5));
+				REQUIRE(reverse(list) == make_ilist(5, 10, 15));
+			}
+		}
+	}
 }
 
 TEST_CASE("PolymorphicList<Base>") {
