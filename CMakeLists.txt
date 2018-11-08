@@ -16,7 +16,7 @@ if(POLYMORPHIC_LIST_BUILD_TESTS)
 endif()
 
 option(POLYMORPHIC_LIST_BUILD_BENCHMARKS
-	   "Build benchmarks for polymorphic-list." ON)
+	   "Build benchmarks for polymorphic-list." OFF)
 if(POLYMORPHIC_LIST_BUILD_BENCHMARKS)
 	find_package(Threads REQUIRED)
 	find_package(benchmark REQUIRED)
