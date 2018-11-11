@@ -147,15 +147,10 @@ public:
 	}
 
 	void clear() noexcept {
-		for (auto current = head_;
-			 current != nullptr && current != dummy_alloc_ptr();)
-		{
-			const auto next = to_alloc_pointer(
-				static_cast<Node*>(current->next)
-			);
-			const auto deleter = current->get_deleter();
-			deleter(alloc_, current);
-			current = static_cast<NodePointer>(next);
+		for (auto current = head_; current != nullptr && current != dummy_alloc_ptr();) {
+			const auto next = to_alloc_pointer(static_cast<Node*>(current->next));
+			current->deleter(alloc_, current);
+			current = next;
 		}
 
 		head_ = nullptr;

@@ -33,6 +33,7 @@
 #define PLIST_DETAIL_HPP
 
 #include <cassert>
+#include <cstddef>
 
 #include <iterator>
 #include <memory>
@@ -46,8 +47,17 @@ class PolymorphicList;
 
 namespace detail {
 
+struct NodeLayout {
+	NodeLayout *prev;
+	NodeLayout *next;
+	void (*deleter)(std::allocator<std::max_align_t>&, NodeLayout*);
+	std::max_align_t value;
+};
+
 template <typename T>
 struct NodeBase {
+	constexpr NodeBase() noexcept = default;
+
 	NodeBase(const NodeBase &other) = delete;
 
 	NodeBase(NodeBase &&other) = delete;
@@ -59,37 +69,36 @@ struct NodeBase {
 	virtual ~NodeBase() = default;
 
 	T& value() & noexcept {
-		assert(value_ptr_);
-
-		return *value_ptr_;
+		return get();
 	}
 
 	const T& value() const & noexcept {
-		assert(value_ptr_);
-
-		return *value_ptr_;
+		return get();
 	}
 
 	T&& value() && noexcept {
-		assert(value_ptr_);
-
-		return std::move(*value_ptr_);
+		return std::move(get());
 	}
 
 	const T&& value() const && noexcept {
-		assert(value_ptr_);
-
-		return std::move(*value_ptr_);
+		return std::move(get());
 	}
 
 	NodeBase *prev = nullptr;
 	NodeBase *next = nullptr;
 
-protected:
-	NodeBase(T *value_ptr) noexcept : value_ptr_{ value_ptr } { }
-
 private:
-	T *value_ptr_;
+	static constexpr std::size_t offset() noexcept {
+		return offsetof(NodeLayout, value);
+	}
+
+	constexpr T& get() noexcept {
+		return *reinterpret_cast<T*>(reinterpret_cast<char*>(this) + offset());
+	}
+
+	constexpr const T& get() const noexcept {
+		return *reinterpret_cast<const T*>(reinterpret_cast<const char*>(this) + offset());
+	}
 };
 
 template <typename T, typename A = std::allocator<T>>
@@ -117,19 +126,12 @@ public:
 
 	virtual ~NodeBaseWithAllocator() = default;
 
-	Deleter get_deleter() const noexcept {
-		assert(deleter_);
-
-		return deleter_;
-	}
-
-protected:
-	NodeBaseWithAllocator(T *value_ptr, Deleter deleter) noexcept
-	: NodeBase<T>{ value_ptr }, deleter_{ deleter } {
+	NodeBaseWithAllocator(Deleter deleter) noexcept
+	: deleter{ deleter } {
 		assert(deleter);
 	}
 
-	Deleter deleter_;
+	Deleter deleter;
 };
 
 template <typename A, typename T>
@@ -165,21 +167,16 @@ void deleter(A &alloc, ReboundPointer<A, B> base_ptr) {
 	ReboundTraits<A, D>::deallocate(derived_alloc, derived_ptr, 1);
 }
 
-template <typename U, typename T, typename A = std::allocator<T>,
-		  std::enable_if_t<std::is_same<T, U>::value || std::is_base_of<T, U>::value, int> = 0>
+template <typename U, typename T, typename A>
 struct Node : NodeBaseWithAllocator<T, A> {
-	template <
-		typename ...Ts,
-		std::enable_if_t<std::is_constructible<U, Ts&&...>::value, int> = 0
-	>
+	static_assert(std::is_same<T, U>::value || std::is_base_of<T, U>::value, "");
+	static_assert(alignof(U) <= alignof(std::max_align_t), "");
+
+	template <typename ...Ts, std::enable_if_t<std::is_constructible<U, Ts&&...>::value, int> = 0>
 	explicit Node(Ts &&...ts)
-	noexcept(std::is_nothrow_constructible<U, Ts&&...>::value) :
-		NodeBaseWithAllocator<T, A>{
-			std::addressof(value_),
-			&deleter<A, NodeBaseWithAllocator<T, A>, Node>
-		},
-		value_(std::forward<Ts>(ts)...)
-	{ }
+	noexcept(std::is_nothrow_constructible<U, Ts&&...>::value)
+	: NodeBaseWithAllocator<T, A>{ &deleter<A, NodeBaseWithAllocator<T, A>, Node> },
+	  value(std::forward<Ts>(ts)...) { }
 
 	Node(const Node &other) = delete;
 
@@ -191,16 +188,13 @@ struct Node : NodeBaseWithAllocator<T, A> {
 
 	virtual ~Node() = default;
 
-private:
-	U value_;
+	alignas(std::max_align_t) U value;
 };
 
 template <typename T, typename A = std::allocator<T>>
 struct DummyNode : NodeBaseWithAllocator<T, A> {
-	constexpr DummyNode() noexcept : NodeBaseWithAllocator<T, A>{
-		nullptr,
-		&deleter<A, NodeBaseWithAllocator<T, A>, DummyNode>
-	} { }
+	constexpr DummyNode() noexcept
+	: NodeBaseWithAllocator<T, A>{ &deleter<A, NodeBaseWithAllocator<T, A>, DummyNode> } { }
 
 	constexpr DummyNode(const DummyNode&) noexcept : DummyNode{ } { }
 
