@@ -170,26 +170,26 @@ constexpr bool operator!=(const Range<I> &lhs, const Range<J> &rhs) {
 
 template <typename I, typename R,
 		  std::enable_if_t<IsRange<R&&>::value, int> = 0>
-constexpr bool operator==(const Range<I> &lhs, R &&rhs) {
-	return lhs == make_range(std::forward<R>(rhs));
+constexpr bool operator==(const Range<I> &lhs, const R &rhs) {
+	return lhs == make_range(rhs);
 }
 
 template <typename I, typename R,
 		  std::enable_if_t<IsRange<R&&>::value, int> = 0>
-constexpr bool operator!=(const Range<I> &lhs, R &&rhs) {
-	return !(lhs == std::forward<R>(rhs));
+constexpr bool operator!=(const Range<I> &lhs, const R &rhs) {
+	return !(lhs == rhs);
 }
 
 template <typename R, typename I,
 		  std::enable_if_t<IsRange<R&&>::value, int> = 0>
-constexpr bool operator==(R &&lhs, const Range<I> &rhs) {
-	return make_range(std::forward<R>(lhs)) == rhs;
+constexpr bool operator==(const R &lhs, const Range<I> &rhs) {
+	return make_range(lhs) == rhs;
 }
 
 template <typename R, typename I,
 		  std::enable_if_t<IsRange<R&&>::value, int> = 0>
-constexpr bool operator!=(R &&lhs, const Range<I> &rhs) {
-	return !(std::forward<R>(lhs) == rhs);
+constexpr bool operator!=(const R &lhs, const Range<I> &rhs) {
+	return !(lhs == rhs);
 }
 
 template <typename R, std::enable_if_t<IsRange<R&&>::value, int> = 0>
