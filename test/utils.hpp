@@ -118,6 +118,11 @@ constexpr auto adl_end(R &&range) noexcept {
 template <typename I>
 class Range {
 public:
+	static_assert(IsIterator<I>::value, "");
+
+	using reference = IterRef<I>;
+	using value_type = IterValue<I>;
+
 	template <
 		typename R,
 		std::enable_if_t<
@@ -192,6 +197,11 @@ constexpr bool operator!=(const R &lhs, const Range<I> &rhs) {
 	return !(lhs == rhs);
 }
 
+template <typename T, typename ...Ts>
+constexpr std::array<T, sizeof...(Ts) + 1> make_array(T &&t, Ts &&...ts) {
+	return { { std::forward<T>(t), std::forward<Ts>(ts)... } };
+}
+
 template <typename R, std::enable_if_t<IsRange<R&&>::value, int> = 0>
 Range<std::reverse_iterator<RangeIter<R&&>>> reverse(R &&range) noexcept {
 	using std::begin;
@@ -201,16 +211,6 @@ Range<std::reverse_iterator<RangeIter<R&&>>> reverse(R &&range) noexcept {
 	const auto last = std::make_reverse_iterator(begin(std::forward<R>(range)));
 
 	return { first, last };
-}
-
-template <typename T>
-constexpr std::initializer_list<T> make_ilist(std::initializer_list<T> list) noexcept {
-	return list;
-}
-
-template <typename ...Ts>
-constexpr auto make_ilist(Ts &&...ts) noexcept {
-	return make_ilist({ std::forward<Ts>(ts)... });
 }
 
 namespace detail {

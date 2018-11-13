@@ -82,8 +82,8 @@ SCENARIO("adding items to a PolymorphicList<int>") {
 				REQUIRE_FALSE(list.empty());
 				REQUIRE(list.size() == 1);
 
-				REQUIRE(make_range(list) == make_ilist(5));
-				REQUIRE(reverse(list) == make_ilist(5));
+				REQUIRE(make_range(list) == make_array(5));
+				REQUIRE(reverse(list) == make_array(5));
 			}
 		}
 
@@ -94,8 +94,8 @@ SCENARIO("adding items to a PolymorphicList<int>") {
 				REQUIRE_FALSE(list.empty());
 				REQUIRE(list.size() == 1);
 
-				REQUIRE(make_range(list) == make_ilist(5));
-				REQUIRE(reverse(list) == make_ilist(5));
+				REQUIRE(make_range(list) == make_array(5));
+				REQUIRE(reverse(list) == make_array(5));
 			}
 		}
 
@@ -108,8 +108,8 @@ SCENARIO("adding items to a PolymorphicList<int>") {
 				REQUIRE_FALSE(list.empty());
 				REQUIRE(list.size() == 3);
 
-				REQUIRE(make_range(list) == make_ilist(5, 10, 15));
-				REQUIRE(reverse(list) == make_ilist(15, 10, 5));
+				REQUIRE(make_range(list) == make_array(5, 10, 15));
+				REQUIRE(reverse(list) == make_array(15, 10, 5));
 			}
 		}
 
@@ -122,8 +122,8 @@ SCENARIO("adding items to a PolymorphicList<int>") {
 				REQUIRE_FALSE(list.empty());
 				REQUIRE(list.size() == 3);
 
-				REQUIRE(make_range(list) == make_ilist(15, 10, 5));
-				REQUIRE(reverse(list) == make_ilist(5, 10, 15));
+				REQUIRE(make_range(list) == make_array(15, 10, 5));
+				REQUIRE(reverse(list) == make_array(5, 10, 15));
 			}
 		}
 	}
