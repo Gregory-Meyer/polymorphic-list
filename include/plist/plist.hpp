@@ -58,6 +58,12 @@ public:
 	using reverse_iterator = std::reverse_iterator<iterator>;
 	using const_reverse_iterator = std::reverse_iterator<const_iterator>;
 
+	PolymorphicList() noexcept = default;
+
+	PolymorphicList(PolymorphicList &&other) noexcept : PolymorphicList{ } {
+		swap(other);
+	}
+
 	~PolymorphicList() {
 		clear();
 	}
@@ -65,29 +71,29 @@ public:
 	reference front() {
 		assert(head_);
 
-		return head_->value();
+		return *head_->value;
 	}
 
 	const_reference front() const {
 		assert(head_);
 
-		return head_->value();
+		return *head_->value;
 	}
 
 	reference back() {
 		assert(tail_);
 
-		return tail_->value();
+		return *tail_->value;
 	}
 
 	const_reference back() const {
 		assert(tail_);
 
-		return tail_->value();
+		return *tail_->value;
 	}
 
 	iterator begin() noexcept {
-		return iterator{ std::addressof(*head_)  };
+		return iterator{ to_raw_pointer(head_) };
 	}
 
 	iterator end() noexcept {
@@ -103,11 +109,11 @@ public:
 	}
 
 	const_iterator cbegin() const noexcept {
-		return const_iterator{ std::addressof(*head_) };
+		return const_iterator{ to_raw_pointer(head_) };
 	}
 
 	const_iterator cend() const noexcept {
-		return iterator{ dummy_raw_ptr() };
+		return const_iterator{ dummy_raw_ptr() };
 	}
 
 	reverse_iterator rbegin() noexcept {
@@ -148,8 +154,10 @@ public:
 
 	void clear() noexcept {
 		for (auto current = head_; current != nullptr && current != dummy_alloc_ptr();) {
-			const auto next = to_alloc_pointer(static_cast<Node*>(current->next));
-			current->deleter(alloc_, current);
+			const auto next = to_alloc_pointer(current->next);
+
+			NodeTraits::destroy(alloc_, current);
+			NodeTraits::deallocate(alloc_, current, 1);
 			current = next;
 		}
 
@@ -262,25 +270,43 @@ public:
 		return iterator{ after_node };
 	}
 
+	void swap(PolymorphicList &other) noexcept {
+		using std::swap;
+
+		swap(head_, other.head_);
+		swap(tail_, other.tail_);
+		swap(alloc_, other.alloc_);
+		swap(size_, other.size_);
+
+		if (!empty()) {
+			tail_->next = dummy_raw_ptr();
+
+			if (head_->next == other.dummy_raw_ptr()) {
+				head_->next = dummy_raw_ptr();
+			}
+		} else {
+			tail_ = dummy_raw_ptr();
+			head_ = dummy_raw_ptr();
+		}
+
+		if (!other.empty()) {
+			other.tail_->next = other.dummy_raw_ptr();
+
+			if (other.head_->next == dummy_raw_ptr()) {
+				other.head_->next = other.dummy_raw_ptr();
+			}
+		} else {
+			other.tail_ = other.dummy_raw_ptr();
+			other.head_ = other.dummy_raw_ptr();
+		}
+	}
+
 private:
-	using Node = detail::NodeBaseWithAllocator<T, A>;
+	using Node = detail::Node<T>;
 	using NodeAllocator =
 		typename std::allocator_traits<A>::template rebind_alloc<Node>;
 	using NodeTraits = std::allocator_traits<NodeAllocator>;
 	using NodePointer = typename NodeTraits::pointer;
-
-	gsl::owner<NodePointer> allocate_dummy() {
-		using DerivedNode = detail::DummyNode<T, A>;
-		using DerivedAllocator =
-			typename NodeTraits::template rebind_alloc<DerivedNode>;
-		using DerivedTraits = std::allocator_traits<DerivedAllocator>;
-
-		DerivedAllocator alloc{ alloc_ };
-		const auto allocated = DerivedTraits::allocate(alloc, 1);
-		DerivedTraits::construct(alloc, allocated);
-
-		return allocated;
-	}
 
 	template <
 		typename U,
@@ -292,20 +318,13 @@ private:
 		> = 0
 	>
 	gsl::owner<NodePointer> allocate_and_construct_node(As &&...args) {
-		using DerivedNode = detail::Node<U, T, A>;
-		using DerivedAllocator =
-			typename NodeTraits::template rebind_alloc<DerivedNode>;
-		using DerivedTraits = std::allocator_traits<DerivedAllocator>;
-
-		DerivedAllocator alloc{ alloc_ };
-		const auto allocated =
-			DerivedTraits::allocate(alloc, 1);
+		const gsl::owner<NodePointer> allocated = NodeTraits::allocate(alloc_, 1);
 
 		try {
-			DerivedTraits::construct(alloc, allocated,
-									 std::forward<As>(args)...);
+			NodeTraits::construct(alloc_, allocated, detail::TypeTag<U>{ },
+								  std::forward<As>(args)...);
 		} catch (...) {
-			DerivedTraits::deallocate(alloc, allocated, 1);
+			NodeTraits::deallocate(alloc_, allocated, 1);
 
 			throw;
 		}
@@ -384,8 +403,8 @@ private:
 		node->next = nullptr;
 		node->prev = nullptr;
 
-		const auto deleter = node->get_deleter();
-		deleter(alloc_, node);
+		NodeTraits::destroy(alloc_, node);
+		NodeTraits::deallocate(alloc_, node, 1);
 
 		return after;
 	}
@@ -414,10 +433,10 @@ private:
 		return std::pointer_traits<NodePointer>::pointer_to(dummy_);
 	}
 
-	mutable detail::DummyNode<T, A> dummy_;
+	mutable Node dummy_;
 	gsl::owner<NodePointer> head_ = dummy_alloc_ptr();
 	gsl::owner<NodePointer> tail_ = dummy_alloc_ptr();
-	allocator_type alloc_;
+	NodeAllocator alloc_;
 	size_type size_ = 0;
 };
 
