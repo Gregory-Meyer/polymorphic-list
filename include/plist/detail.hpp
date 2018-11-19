@@ -53,7 +53,7 @@ struct Node;
 template <typename T>
 struct TypeTag { };
 
-using Storage = std::aligned_storage_t<sizeof(float) * 16, alignof(std::max_align_t)>;
+using Storage = std::aligned_storage_t<sizeof(float) * 8, alignof(std::max_align_t)>;
 
 template <typename U>
 static constexpr bool can_store() noexcept {
@@ -65,13 +65,13 @@ class SmallBox {
 public:
 	template <typename U, typename ...Ts, std::enable_if_t<(std::is_same<T, U>::value || std::is_base_of<T, U>::value) && std::is_constructible<U, Ts&&...>::value && can_store<U>(), int> = 0>
 	explicit SmallBox(TypeTag<U>, Ts &&...ts) noexcept(std::is_nothrow_constructible<U, Ts&&...>::value) {
-		new (reinterpret_cast<void*>(std::addressof(storage_))) U(std::forward<Ts>(ts)...);
+		new (static_cast<void*>(&storage_)) U(std::forward<Ts>(ts)...);
 		is_local_ = true;
 	}
 
 	template <typename U, typename ...Ts, std::enable_if_t<(std::is_same<T, U>::value || std::is_base_of<T, U>::value) && std::is_constructible<U, Ts&&...>::value && !can_store<U>(), int> = 0>
 	explicit SmallBox(TypeTag<U>, Ts &&...ts) {
-		new (std::addressof(box_)) Box(std::make_unique<U>(std::forward<Ts>(ts)...));
+		new (static_cast<void*>(&box_)) Box(std::make_unique<U>(std::forward<Ts>(ts)...));
 		is_local_ = false;
 	}
 
@@ -85,7 +85,7 @@ public:
 
 	T& get() & noexcept {
 		if (is_local_) {
-			return *reinterpret_cast<T*>(std::addressof(storage_));
+			return reinterpret_cast<T&>(storage_);
 		} else {
 			return *box_;
 		}
@@ -93,7 +93,7 @@ public:
 
 	const T& get() const & noexcept {
 		if (is_local_) {
-			return *reinterpret_cast<const T*>(std::addressof(storage_));
+			return reinterpret_cast<const T&>(storage_);
 		} else {
 			return *box_;
 		}
@@ -101,7 +101,7 @@ public:
 
 	T&& get() && noexcept {
 		if (is_local_) {
-			return std::move(*reinterpret_cast<T*>(std::addressof(storage_)));
+			return std::move(reinterpret_cast<T&>(storage_));
 		} else {
 			return std::move(*box_);
 		}
@@ -109,7 +109,7 @@ public:
 
 	const T&& get() const && noexcept {
 		if (is_local_) {
-			return std::move(*reinterpret_cast<const T*>(std::addressof(storage_)));
+			return std::move(reinterpret_cast<const T&>(storage_));
 		} else {
 			return std::move(*box_);
 		}
